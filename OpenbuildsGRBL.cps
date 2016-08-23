@@ -1,14 +1,13 @@
-/**
-  Copyright (C) 2012-2016 by Autodesk, Inc.
-  All rights reserved.
+/*
+Custom Post-Processor for GRBL based Openbuilds-style CNC machines
+Using Exiting Post Processors as inspiration
+For documentation, see GitHub Wiki : https://github.com/Strooom/GRBL-Post-Processor/wiki
 
-  Grbl post processor configuration.
+22/AUG/2016 - V1 : Kick Off
+23/AUG/2016 - V2 : Added Machining Time to Operations overview at file header
 
-  $Revision: 40934 f4c9357a342dfbb0a12307bcf521795234d7fdbd $
-  $Date: 2016-01-15 18:57:39 $
-  
-  FORKID {154F7C00-6549-4c77-ADE0-79375FE5F2AA}
 */
+
 
 description = "Openbuilds Grbl";
 vendor = "Openbuilds";
@@ -39,6 +38,7 @@ allowedCircularPlanes = undefined; // allow any circular motion
 
 // user-defined properties
 properties = {
+	SpindleOnOffDelay: 0.8	// time (in seconds) the spindle needs to get up to speed or stop
   ///writeMachine: true, // write machine info
   //writeTools: true, // writes the tools info
   //useG28: false, // disable - not needed as we can send G53 to GRBL and this is simpler to uderstand
@@ -203,7 +203,34 @@ function onOpen()
         var section = getSection(i);
         var tool = section.getTool();
 		var rpm = section.getMaximumSpindleSpeed();
-		writeComment((i+1) + " - Tool : " + toTitleCase(getToolTypeName(tool.type)) + " " + tool.numberOfFlutes + " Flutes, Diam = " + xyzFormat.format(tool.diameter) + "mm, Len = " + tool.fluteLength + "mm, RPM = " + rpm + ", set router dial to " + rpm2dial(rpm));
+
+		if (section.hasParameter("operation-comment"))
+			{
+			writeComment((i+1) + " : " + section.getParameter("operation-comment"));
+			}
+		else
+			{
+			writeComment(i+1);
+			}
+		
+		writeComment("  Tool : " + toTitleCase(getToolTypeName(tool.type)) + " " + tool.numberOfFlutes + " Flutes, Diam = " + xyzFormat.format(tool.diameter) + "mm, Len = " + tool.fluteLength + "mm");
+		writeComment("  Spindle : RPM = " + rpm + ", set router dial to " + rpm2dial(rpm));
+
+		var machineTimeInSeconds = section.getCycleTime();
+		var machineTimeHours = Math.floor(machineTimeInSeconds / 3600);
+		machineTimeInSeconds  = machineTimeInSeconds % 3600;
+		var machineTimeMinutes = Math.floor(machineTimeInSeconds / 60);
+		var machineTimeSeconds = Math.floor(machineTimeInSeconds % 60);
+
+		if (machineTimeHours > 0)
+			{
+			writeComment("  Machining time : " + machineTimeHours + " hours " + machineTimeMinutes + " min " + machineTimeSeconds + " sec");
+				
+			}
+		else
+			{
+			writeComment("  Machining time : " + machineTimeMinutes + " min " + machineTimeSeconds + " sec");
+			}
 		}
 	writeln("");
 		
@@ -236,10 +263,10 @@ function onSection()
 	writeln("");
 	var nmbrOfSections = getNumberOfSections();
 	var curSection = getCurrentSectionId();	
-	var comment = "Section " + (curSection + 1) + " of " + nmbrOfSections;
+	var comment = "Operation " + (curSection + 1) + " of " + nmbrOfSections;
 	if (hasParameter("operation-comment"))
 		{
-		comment = comment + ", Operation : " + getParameter("operation-comment");
+		comment = comment + " : " + getParameter("operation-comment");
 		}
 	writeComment(comment);
 
@@ -252,7 +279,7 @@ function onSection()
     writeBlock(sOutput.format(tool.spindleRPM), mFormat.format(3));
 	if(isFirstSection())
 		{
-		onDwell(0.8);	// Wait 0.8 second for spindle to speed up - only on first section, as spindle is not powered down in-between sections
+		onDwell(properties.SpindleOnOffDelay);	// Wait some time for spindle to speed up - only on first section, as spindle is not powered down in-between sections
 		}
 	
 //	var retracted = false; // specifies that the tool has been retracted to the safe plane
@@ -452,7 +479,7 @@ function onClose()
 	writeBlock(gAbsIncModal.format(90), gFormat.format(53), gMotionModal.format(0), "Z" + xyzFormat.format(-3));	// Retract spindle to Machine Z-3
 	writeBlock(mFormat.format(5));	// Stop Spindle
 	writeBlock(mFormat.format(9));	// Stop Coolant
-	onDwell(0.8);	// Wait 0.8 second for spindle to stop
+	onDwell(properties.SpindleOnOffDelay);	// Wait for spindle to stop
 	writeBlock(gAbsIncModal.format(90), gFormat.format(53), gMotionModal.format(0), "X" + xyzFormat.format(-10), "Y" + xyzFormat.format(-10));	// Return to home position
 	writeBlock(mFormat.format(30)); // Program End
 	writeln("%");					// Punch-Tape End
