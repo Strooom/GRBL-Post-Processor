@@ -1,13 +1,14 @@
 /*
+
 Custom Post-Processor for GRBL based Openbuilds-style CNC machines
 Using Exiting Post Processors as inspiration
 For documentation, see GitHub Wiki : https://github.com/Strooom/GRBL-Post-Processor/wiki
 
 22/AUG/2016 - V1 : Kick Off
 23/AUG/2016 - V2 : Added Machining Time to Operations overview at file header
+24/AUG/2016 - V3 : Added extra user properties - further cleanup of unused variables
 
 */
-
 
 description = "Openbuilds Grbl";
 vendor = "Openbuilds";
@@ -16,56 +17,44 @@ model = "OX";
 description = "Open Hardware Desktop CNC Router";
 legal = "Copyright (C) 2012-2016 by Autodesk, Inc.";
 certificationLevel = 2;
-// minimumRevision = 24000;
 
-extension = "nc";
-setCodePage("ascii");
-//setEOL(CRLF);	// is default
+extension = "nc";						// file extension of the gcode file
+setCodePage("ascii");					// character set of the gcode file
+//setEOL(CRLF);							// end-of-line type : use CRLF for windows
 
-
-capabilities = CAPABILITY_MILLING;
-tolerance = spatial(0.005, MM);		// 
-
+capabilities = CAPABILITY_MILLING;		// intended for a CNC, so Milling
+tolerance = spatial(0.005, MM);
 minimumChordLength = spatial(0.01, MM);
 minimumCircularRadius = spatial(0.01, MM);
 maximumCircularRadius = spatial(1000, MM);
 minimumCircularSweep = toRad(0.01);
 maximumCircularSweep = toRad(180);
 allowHelicalMoves = true;
-allowedCircularPlanes = undefined; // allow any circular motion
+allowedCircularPlanes = undefined;
 
+var GRBLunits = MM;						// GRBL controller set to mm (Metric). Allows for a consistence check between GRBL settings and CAM file output
+										// var GRBLunits = IN;
 
+// user-defined properties : defaults are set, but they can be chenged from a dialog box in Fusion when doing a post.
+properties =
+	{
+	spindleOnOffDelay: 0.8,				// time (in seconds) the spindle needs to get up to speed or stop
+	spindleTwoDirections : false,		// true : spindle can rotate clockwise and counterclockwise, will send M3 and M4. false : spindle can only go clockwise, will only send M3
+	hasCoolant : false,					// true : machine uses the coolant output, M8 M9 will be sent. false : coolant output not connected, so no M8 M9 will be sent
+	hasSpeedDial : true,				// true : the spindle is of type Makite RT0700, Dewalt 611 with a Dial to set speeds 1-6. false : other spindle
+	machineHomeZ : -3,					// absolute machine coordinates where the machine will move to at the end of the job - first retracting Z, then moving home X Y
+	machineHomeX : -10,
+	machineHomeY : -10
+	};
 
-// user-defined properties
-properties = {
-	SpindleOnOffDelay: 0.8	// time (in seconds) the spindle needs to get up to speed or stop
-  ///writeMachine: true, // write machine info
-  //writeTools: true, // writes the tools info
-  //useG28: false, // disable - not needed as we can send G53 to GRBL and this is simpler to uderstand
-  //showSequenceNumbers: false, // show sequence numbers
-  //sequenceNumberStart: 10, // first sequence number
-  //sequenceNumberIncrement: 1, // increment for sequence numbers
-  //separateWordsWithSpace: true // specifies that the words should be separated with a white space
-};
-
-//var numberOfToolSlots = 9999;
-var numberOfToolSlots = 1;
-
-var mapCoolantTable = new Table
-	(
-	[9, 8],
-	{initial:COOLANT_OFF, force:true},
-	"Invalid coolant mode"
-	);
-
+// creation of all kinds of G-code formats - controls the amount of decimals used in the generated G-Code
 var gFormat = createFormat({prefix:"G", decimals:0});
 var mFormat = createFormat({prefix:"M", decimals:0});
 
 var xyzFormat = createFormat({decimals:(unit == MM ? 3 : 4)});
 var feedFormat = createFormat({decimals:0});
-var toolFormat = createFormat({decimals:0});
 var rpmFormat = createFormat({decimals:0});
-var secFormat = createFormat({decimals:1, forceDecimal:true}); // seconds - range 0.001-1000
+var secFormat = createFormat({decimals:1, forceDecimal:true});
 var taperFormat = createFormat({decimals:1, scale:DEG});
 
 var xOutput = createVariable({prefix:"X"}, xyzFormat);
@@ -74,63 +63,54 @@ var zOutput = createVariable({prefix:"Z"}, xyzFormat);
 var feedOutput = createVariable({prefix:"F"}, feedFormat);
 var sOutput = createVariable({prefix:"S", force:true}, rpmFormat);
 
-// circular output
 var iOutput = createReferenceVariable({prefix:"I"}, xyzFormat);
 var jOutput = createReferenceVariable({prefix:"J"}, xyzFormat);
 var kOutput = createReferenceVariable({prefix:"K"}, xyzFormat);
 
-var gMotionModal = createModal({}, gFormat); // modal group 1 // G0-G3, ...
+var gMotionModal = createModal({}, gFormat); 											// modal group 1 // G0-G3, ...
 var gPlaneModal = createModal({onchange:function () {gMotionModal.reset();}}, gFormat); // modal group 2 // G17-19
-var gAbsIncModal = createModal({}, gFormat); // modal group 3 // G90-91
-var gFeedModeModal = createModal({}, gFormat); // modal group 5 // G93-94
-var gUnitModal = createModal({}, gFormat); // modal group 6 // G20-21
-
-var WARNING_WORK_OFFSET = 0;
-
-// collected state
-var sequenceNumber;
-var currentWorkOffset;
+var gAbsIncModal = createModal({}, gFormat); 											// modal group 3 // G90-91
+var gFeedModeModal = createModal({}, gFormat); 											// modal group 5 // G93-94
+var gUnitModal = createModal({}, gFormat); 												// modal group 6 // G20-21
 
 function toTitleCase(str)
 	{
+	// function to reformat a string to 'title case'
     return str.replace(/\w\S*/g, function(txt){return txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase();});
 	}
-
 	
 function rpm2dial(rpm)
 	{
-	// translates an RPM for the spindle into a dial value for the Makita and Dewalt routers
-	// additionaly, check that spindle rpm is between 10000 and 30000 as this is what our spindle can do
-	if (rpm < 10000)
+	// translates an RPM for the spindle into a dial value, eg for the Makita RT0700 and Dewalt 611 routers
+	// additionaly, check that spindle rpm is between minimun and maximum of what our spindle can do
+
+	// array which maps spindle speeds to router dial settings,
+	// according to Makita RT0700 Manual : 1=10000, 2=12000, 3=17000, 4=22000, 5=27000, 6=30000
+	var speeds = [0, 10000, 12000, 17000, 22000, 27000, 30000];
+
+	if (rpm < speeds[1])
 		{
-		alert("Warning", rpm + " rpm is below minimum spindle RPM of 10000 rpm");
+		alert("Warning", rpm + " rpm is below minimum spindle RPM of " + speeds[1] + " rpm");
 		return 1;
 		}
-	else if (rpm < 12000)
+
+	if (rpm > speeds[speeds.length - 1])
 		{
-		return ((rpm - 10000) / (12000 - 10000)) + 1;
+		alert("Warning", rpm + " rpm is above maximum spindle RPM of " + speeds[speeds.length - 1] + " rpm");
+		return (speeds.length - 1);
 		}
-	else if (rpm < 17000)
+
+	var i;
+	for (i=1; i < (speeds.length-1); i++)
 		{
-		return ((rpm - 12000) / (17000 - 12000)) + 2;
+		if ((rpm >= speeds[i]) && (rpm <= speeds[i+1]))
+			{
+			return ((rpm - speeds[i]) / (speeds[i+1] - speeds[i])) + i;
+			}
 		}
-	else if (rpm < 22000)
-		{
-		return ((rpm - 17000) / (22000 - 17000)) + 3;
-		}
-	else if (rpm < 27000)
-		{
-		return ((rpm - 22000) / (27000 - 22000)) + 4;
-		}
-	else if (rpm <= 30000)
-		{
-		return ((rpm - 27000) / (30000 - 27000)) + 5;
-		}
-	else
-		{
-		alert("Warning", rpm + " rpm is above maximum spindle RPM of 30000 rpm");
-		return 6;
-		}
+
+	alert("Error", "Error in calculating router speed dial..");
+	return 0;
 	}
 	
 function writeBlock()
@@ -138,30 +118,34 @@ function writeBlock()
 	writeWords(arguments);
 	}
 
-function formatComment(text)
-	{
-	return "(" + String(text).replace(/[\(\)]/g, "") + ")";
-	}
-
 function writeComment(text)
 	{
-	writeln(formatComment(text));
+	// Remove special characters which could confuse GRBL : $, !, ~, ?, (, )
+	// In order to make it simple, I replace everything which is not A-Z, 0-9, space, : , .
+	// Finally put everything between () as this is the way GRBL & UGCS expect comments
+	writeln("(" + String(text).replace(/[^a-zA-Z\d :=,.]+/g, " ") + ")");
 	}
 
 function onOpen()
 	{
 	// Number of checks capturing fatal errors
-	// 1. is CAD file in mm, as is our GRBL configuration ?
-	if (unit == IN)
+	// 1. is CAD file in same units as our GRBL configuration ?
+	if (unit != GRBLunits)
 		{
-		error("*** Imperial units (inches) are not supported - GRBL controller is configured to metric (mm) - Change units in CAD/CAM software to mm ***");
-		alert("Error", "*** Imperial units (inches) are not supported - GRBL controller is configured to metric (mm) - Change units in CAD/CAM software to mm ***");
-		return;
+		if (GRBLunits == MM)
+			{
+			alert("Error", "GRBL configured to mm - CAD file sends Inches! - Change units in CAD/CAM software to mm");
+			}
+		else
+			{
+			alert("Error", "GRBL configured to inches - CAD file sends mm! - Change units in CAD/CAM software to inches");
+			}
 		}
 
 	// 2. is RadiusCompensation not set incorrectly ?
 	onRadiusCompensation();
 		
+	// 3. here you set all the properties of your machine, so they can be used later on
 	var myMachine = getMachineConfiguration();
 	myMachine.setWidth(600);
 	myMachine.setDepth(800);
@@ -177,26 +161,25 @@ function onOpen()
 	myMachine.setModel("OX CNC 1000 x 750");
 	myMachine.setControl("GRBL V0.9j");
 
-	sequenceNumber = properties.sequenceNumberStart;
 	writeln("%");
 
 	var productName = getProduct();
 	writeComment("Made in : " + productName);
 	writeComment("G-Code optimized for " + myMachine.getVendor() + " " + myMachine.getModel() + " with " + myMachine.getControl() + " controller");
+
 	writeln("");
 	
 	if (programName)
 		{
 		writeComment("Program Name : " + programName);
 		}
-  
 	if (programComment)
 		{
 		writeComment("Program Comments : " + programComment);
 		}
 
 	var numberOfSections = getNumberOfSections();
-	writeComment(numberOfSections + " Operation" + ((numberOfSections == 1)?"":"s") + " : ");
+	writeComment(numberOfSections + " Operation" + ((numberOfSections == 1)?"":"s") + " :");
 
 	for (var i = 0; i < numberOfSections; ++i)
 		{
@@ -212,32 +195,40 @@ function onOpen()
 			{
 			writeComment(i+1);
 			}
-		
-		writeComment("  Tool : " + toTitleCase(getToolTypeName(tool.type)) + " " + tool.numberOfFlutes + " Flutes, Diam = " + xyzFormat.format(tool.diameter) + "mm, Len = " + tool.fluteLength + "mm");
-		writeComment("  Spindle : RPM = " + rpm + ", set router dial to " + rpm2dial(rpm));
 
+		writeComment("  Work Coordinate System : G" + (section.workOffset + 53));
+		writeComment("  Tool : " + toTitleCase(getToolTypeName(tool.type)) + " " + tool.numberOfFlutes + " Flutes, Diam = " + xyzFormat.format(tool.diameter) + "mm, Len = " + tool.fluteLength + "mm");
+		if (properties.hasSpeedDial)
+			{
+			writeComment("  Spindle : RPM = " + rpm + ", set router dial to " + rpm2dial(rpm));
+			}
+		else
+			{
+			writeComment("  Spindle : RPM = " + rpm);
+			}
 		var machineTimeInSeconds = section.getCycleTime();
 		var machineTimeHours = Math.floor(machineTimeInSeconds / 3600);
 		machineTimeInSeconds  = machineTimeInSeconds % 3600;
 		var machineTimeMinutes = Math.floor(machineTimeInSeconds / 60);
 		var machineTimeSeconds = Math.floor(machineTimeInSeconds % 60);
-
+		var machineTimeText = "  Machining time : ";
 		if (machineTimeHours > 0)
 			{
-			writeComment("  Machining time : " + machineTimeHours + " hours " + machineTimeMinutes + " min " + machineTimeSeconds + " sec");
-				
+			machineTimeText = machineTimeText + machineTimeHours + " hours " + machineTimeMinutes + " min ";
 			}
-		else
+		else if (machineTimeMinutes > 0)
 			{
-			writeComment("  Machining time : " + machineTimeMinutes + " min " + machineTimeSeconds + " sec");
+			machineTimeText = machineTimeText + machineTimeMinutes + " min ";
 			}
+		machineTimeText = machineTimeText + machineTimeSeconds + " sec";
+		writeComment(machineTimeText);
 		}
 	writeln("");
-		
 		
 	writeBlock(gAbsIncModal.format(90), gFeedModeModal.format(94));
 	writeBlock(gPlaneModal.format(17));
     writeBlock(gUnitModal.format(21));
+	writeln("");
 	}
 
 function onComment(message)
@@ -260,7 +251,7 @@ function forceAny()
 
 function onSection()
 	{
-	writeln("");
+	// Insert a small comment section to identify the related G-Code in a large multi-operations file
 	var nmbrOfSections = getNumberOfSections();
 	var curSection = getCurrentSectionId();	
 	var comment = "Operation " + (curSection + 1) + " of " + nmbrOfSections;
@@ -272,26 +263,52 @@ function onSection()
 
 	var section = getSection(curSection);
 	var tool = section.getTool();
-//	var comment = "Tool : " + toTitleCase(getToolTypeName(tool.type)) + " " + tool.numberOfFlutes + " Flutes, Diam = " + xyzFormat.format(tool.diameter) + "mm, Len = " + tool.fluteLength + "mm";
-//	writeComment(comment);
 	writeln("");
 		
-    writeBlock(sOutput.format(tool.spindleRPM), mFormat.format(3));
+	// Insert the Spindle start command
+	if (tool.clockwise)
+		{
+		writeBlock(sOutput.format(tool.spindleRPM), mFormat.format(3));
+		}
+	else if (properties.spindleTwoDirections)
+		{
+		writeBlock(sOutput.format(tool.spindleRPM), mFormat.format(4));
+		}
+	else
+		{
+		alert("Error", "Counter-clockwise Spindle Operation found, but your spindle does not support this");
+		return;
+		}
+		
+	// Wait some time for spindle to speed up - only on first section, as spindle is not powered down in-between sections
 	if(isFirstSection())
 		{
-		onDwell(properties.SpindleOnOffDelay);	// Wait some time for spindle to speed up - only on first section, as spindle is not powered down in-between sections
+		onDwell(properties.spindleOnOffDelay);
 		}
 	
-//	var retracted = false; // specifies that the tool has been retracted to the safe plane
-
-	var workOffset = currentSection.workOffset;
-	if (workOffset == 0)
+	// If the machine has coolant, write M8 or M9
+	if (properties.hasCoolant)
 		{
-		workOffset = 1;
+		if (tool.coolant != COOLANT_DISABLED)
+			{
+			writeBlock(sOutput.format(tool.coolant), mFormat.format(8));		
+			}
+		else
+			{
+			writeBlock(sOutput.format(tool.coolant), mFormat.format(9));		
+			}
 		}
-  
-	writeBlock(gFormat.format(53 + workOffset)); // G54->G59
-	currentWorkOffset = workOffset;
+	
+	// Write the WCS, ie. G54 or higher..
+	if ((currentSection.workOffset < 1) || (currentSection.workOffset > 6))
+		{
+		alert("Error", "Invalid Work Coordinate System. Select WCS 1..6 in CAM software")
+		return;
+		}
+	else
+		{
+		writeBlock(gFormat.format(53 + currentSection.workOffset));
+		}
 
 	forceXYZ();
 
@@ -320,14 +337,12 @@ function onSpindleSpeed(spindleSpeed)
 	writeBlock(sOutput.format(spindleSpeed));
 	}
 
-var pendingRadiusCompensation = -1;
-
 function onRadiusCompensation()
 	{
 	var radComp = getRadiusCompensation();
 	if (radComp != RADIUS_COMPENSATION_OFF)
 		{
-		error("*** RadiusCompensation is not supported in GRBL - Change RadiusCompensation in CAD/CAM software to Off/Center/Computer ***");
+		alert("Error", "RadiusCompensation is not supported in GRBL - Change RadiusCompensation in CAD/CAM software to Off/Center/Computer");
 		return;
 		}
 	}
@@ -370,18 +385,16 @@ function onLinear(_x, _y, _z, feed)
 
 function onRapid5D(_x, _y, _z, _a, _b, _c)
 	{
-	error(localize("GRBL ony supports 3 Axis"));
+	alert("Error", "GRBL ony supports 3 Axis");
 	}
 
 function onLinear5D(_x, _y, _z, _a, _b, _c, feed)
 	{
-	error(localize("GRBL ony supports 3 Axis"));
+	alert("Error", "GRBL ony supports 3 Axis");
 	}
 
 function onCircular(clockwise, cx, cy, cz, x, y, z, feed)
 	{
-	// one of X/Y and I/J are required and likewise
-
 	var start = getCurrentPosition();
 
 	if (isFullCircle())
@@ -426,61 +439,23 @@ function onCircular(clockwise, cx, cy, cz, x, y, z, feed)
 		}
 	}
 
-var mapCommand =
-	{
-	COMMAND_STOP:0,
-	COMMAND_END:2,
-	COMMAND_SPINDLE_CLOCKWISE:3,
-	COMMAND_SPINDLE_COUNTERCLOCKWISE:4,
-	COMMAND_STOP_SPINDLE:5,
-	COMMAND_COOLANT_ON:8,
-	COMMAND_COOLANT_OFF:9
-	};
-
-function onCommand(command)
-	{
-	switch (command)
-		{
-		case COMMAND_START_SPINDLE:
-			onCommand(tool.clockwise ? COMMAND_SPINDLE_CLOCKWISE : COMMAND_SPINDLE_COUNTERCLOCKWISE);
-			return;
-		case COMMAND_LOCK_MULTI_AXIS:
-			return;
-		case COMMAND_UNLOCK_MULTI_AXIS:
-			return;
-		case COMMAND_BREAK_CONTROL:
-			return;
-		case COMMAND_TOOL_MEASURE:
-			return;
-		}
-
-	var stringId = getCommandStringId(command);
-	var mcode = mapCommand[stringId];
-	if (mcode != undefined)
-		{
-		writeBlock(mFormat.format(mcode));
-		}
-	else
-		{
-		onUnsupportedCommand(command);
-		}
-	}
-
 function onSectionEnd()
 	{
 	// writeBlock(gPlaneModal.format(17));
 	forceAny();
-	// writeComment("Section End");
 	writeln("");
 	}
 
 function onClose()
 	{
 	writeBlock(gAbsIncModal.format(90), gFormat.format(53), gMotionModal.format(0), "Z" + xyzFormat.format(-3));	// Retract spindle to Machine Z-3
-	writeBlock(mFormat.format(5));	// Stop Spindle
-	writeBlock(mFormat.format(9));	// Stop Coolant
-	onDwell(properties.SpindleOnOffDelay);	// Wait for spindle to stop
+	writeBlock(mFormat.format(5));																					// Stop Spindle
+	if (properties.hasCoolant)
+		{
+		writeBlock(mFormat.format(9));																				// Stop Coolant
+		}
+	onDwell(properties.spindleOnOffDelay);																			// Wait for spindle to stop
 	writeBlock(gAbsIncModal.format(90), gFormat.format(53), gMotionModal.format(0), "X" + xyzFormat.format(-10), "Y" + xyzFormat.format(-10));	// Return to home position
-	writeBlock(mFormat.format(30)); // Program End
-	writeln("%");					// Punch-Tape End
+	writeBlock(mFormat.format(30));																					// Program End
+	writeln("%");																									// Punch-Tape End
 	}
