@@ -32,10 +32,10 @@ maximumCircularSweep = toRad(180);
 allowHelicalMoves = true;
 allowedCircularPlanes = undefined;
 
-var GRBLunits = MM;						// GRBL controller set to mm (Metric). Allows for a consistence check between GRBL settings and CAM file output
+var GRBLunits = MM;						// GRBL controller set to mm (Metric). Allows for a consistency check between GRBL settings and CAM file output
 										// var GRBLunits = IN;
 
-// user-defined properties : defaults are set, but they can be chenged from a dialog box in Fusion when doing a post.
+// user-defined properties : defaults are set, but they can be changed from a dialog box in Fusion when doing a post.
 properties =
 	{
 	spindleOnOffDelay: 0.8,				// time (in seconds) the spindle needs to get up to speed or stop
