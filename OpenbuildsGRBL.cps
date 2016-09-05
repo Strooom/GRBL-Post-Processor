@@ -110,6 +110,7 @@ function rpm2dial(rpm)
 		}
 
 	alert("Error", "Error in calculating router speed dial..");
+	error("Fatal Error calculating router speed dial");
 	return 0;
 	}
 	
@@ -135,10 +136,12 @@ function onOpen()
 		if (GRBLunits == MM)
 			{
 			alert("Error", "GRBL configured to mm - CAD file sends Inches! - Change units in CAD/CAM software to mm");
+			error("Fatal Error : units mismatch between CADfile and GRBL setting");
 			}
 		else
 			{
 			alert("Error", "GRBL configured to inches - CAD file sends mm! - Change units in CAD/CAM software to inches");
+			error("Fatal Error : units mismatch between CADfile and GRBL setting");
 			}
 		}
 
@@ -277,6 +280,7 @@ function onSection()
 	else
 		{
 		alert("Error", "Counter-clockwise Spindle Operation found, but your spindle does not support this");
+		error("Fatal Error in Operation " + (curSection + 1) + ": Counter-clockwise Spindle Operation found, but your spindle does not support this");
 		return;
 		}
 		
@@ -302,7 +306,7 @@ function onSection()
 	// Write the WCS, ie. G54 or higher..
 	if ((currentSection.workOffset < 1) || (currentSection.workOffset > 6))
 		{
-		alert("Warning", "Invalid Work Coordinate System. Select WCS 1..6 in CAM software");
+		alert("Warning", "Invalid Work Coordinate System. Select WCS 1..6 in CAM software. Selecting default WCS1/G54");
 		currentSection.workOffset = 1;	// If no WCS is set (or out of range), then default to WCS1 / G54
 		}
 	writeBlock(gFormat.format(53 + currentSection.workOffset));
@@ -310,10 +314,11 @@ function onSection()
 	forceXYZ();
 
     var remaining = currentSection.workPlane;
-    if (!isSameDirection(remaining.forward, new Vector(0, 0, 1))) {
-      error(localize("Tool orientation is not supported."));
-      return;
-    }
+    if (!isSameDirection(remaining.forward, new Vector(0, 0, 1)))
+		{
+		alert("Error", "Tool-Rotation detected - GRBL ony supports 3 Axis");
+		error("Fatal Error in Operation " + (curSection + 1) + ": Tool-Rotation detected but GRBL ony supports 3 Axis");
+		}
     setRotation(remaining);
 
 	forceAny();
@@ -337,9 +342,11 @@ function onSpindleSpeed(spindleSpeed)
 function onRadiusCompensation()
 	{
 	var radComp = getRadiusCompensation();
+	var curSection = getCurrentSectionId();	
 	if (radComp != RADIUS_COMPENSATION_OFF)
 		{
 		alert("Error", "RadiusCompensation is not supported in GRBL - Change RadiusCompensation in CAD/CAM software to Off/Center/Computer");
+		error("Fatal Error in Operation " + (curSection + 1) + ": RadiusCompensation is found in CAD file but is not supported in GRBL");
 		return;
 		}
 	}
@@ -382,12 +389,14 @@ function onLinear(_x, _y, _z, feed)
 
 function onRapid5D(_x, _y, _z, _a, _b, _c)
 	{
-	alert("Error", "GRBL ony supports 3 Axis");
+	alert("Error", "Tool-Rotation detected - GRBL ony supports 3 Axis");
+	error("Tool-Rotation detected but GRBL ony supports 3 Axis");
 	}
 
 function onLinear5D(_x, _y, _z, _a, _b, _c, feed)
 	{
-	alert("Error", "GRBL ony supports 3 Axis");
+	alert("Error", "Tool-Rotation detected - GRBL ony supports 3 Axis");
+	error("Tool-Rotation detected but GRBL ony supports 3 Axis");
 	}
 
 function onCircular(clockwise, cx, cy, cz, x, y, z, feed)
