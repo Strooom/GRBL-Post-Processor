@@ -302,13 +302,10 @@ function onSection()
 	// Write the WCS, ie. G54 or higher..
 	if ((currentSection.workOffset < 1) || (currentSection.workOffset > 6))
 		{
-		alert("Error", "Invalid Work Coordinate System. Select WCS 1..6 in CAM software")
-		return;
+		alert("Warning", "Invalid Work Coordinate System. Select WCS 1..6 in CAM software");
+		currentSection.workOffset = 1;	// If no WCS is set (or out of range), then default to WCS1 / G54
 		}
-	else
-		{
-		writeBlock(gFormat.format(53 + currentSection.workOffset));
-		}
+	writeBlock(gFormat.format(53 + currentSection.workOffset));
 
 	forceXYZ();
 
