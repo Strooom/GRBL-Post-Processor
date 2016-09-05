@@ -289,13 +289,13 @@ function onSection()
 	// If the machine has coolant, write M8 or M9
 	if (properties.hasCoolant)
 		{
-		if (tool.coolant != COOLANT_DISABLED)
+		if (tool.coolant)
 			{
-			writeBlock(sOutput.format(tool.coolant), mFormat.format(8));		
+			writeBlock(mFormat.format(8));		
 			}
 		else
 			{
-			writeBlock(sOutput.format(tool.coolant), mFormat.format(9));		
+			writeBlock(mFormat.format(9));		
 			}
 		}
 	
