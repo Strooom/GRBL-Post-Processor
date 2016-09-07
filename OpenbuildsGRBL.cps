@@ -287,7 +287,7 @@ function onSection()
 	// it is done with G53 - machine coordinates, so I put it in front of anything else
 	if(isFirstSection())
 		{
-		writeBlock(gAbsIncModal.format(90), gFormat.format(53), gMotionModal.format(0), "Z" + xyzFormat.format(-3));	// Retract spindle to Machine Z-3
+		writeBlock(gAbsIncModal.format(90), gFormat.format(53), gMotionModal.format(0), "Z" + xyzFormat.format(properties.machineHomeZ));	// Retract spindle to Machine Z Home
 		}
 
 	// Write the WCS, ie. G54 or higher.. default to WCS1 / G54 if no or invalid WCS in order to prevent using Machine Coordinates G53
@@ -478,14 +478,14 @@ function onSectionEnd()
 
 function onClose()
 	{
-	writeBlock(gAbsIncModal.format(90), gFormat.format(53), gMotionModal.format(0), "Z" + xyzFormat.format(-3));	// Retract spindle to Machine Z-3
+	writeBlock(gAbsIncModal.format(90), gFormat.format(53), gMotionModal.format(0), "Z" + xyzFormat.format(properties.machineHomeZ));	// Retract spindle to Machine Z Home
 	writeBlock(mFormat.format(5));																					// Stop Spindle
 	if (properties.hasCoolant)
 		{
 		writeBlock(mFormat.format(9));																				// Stop Coolant
 		}
 	onDwell(properties.spindleOnOffDelay);																			// Wait for spindle to stop
-	writeBlock(gAbsIncModal.format(90), gFormat.format(53), gMotionModal.format(0), "X" + xyzFormat.format(-10), "Y" + xyzFormat.format(-10));	// Return to home position
+	writeBlock(gAbsIncModal.format(90), gFormat.format(53), gMotionModal.format(0), "X" + xyzFormat.format(properties.machineHomeX), "Y" + xyzFormat.format(properties.machineHomeY));	// Return to home position
 	writeBlock(mFormat.format(30));																					// Program End
 	writeln("%");																									// Punch-Tape End
 	}
