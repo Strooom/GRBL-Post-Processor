@@ -230,7 +230,16 @@ function onOpen()
 		
 	writeBlock(gAbsIncModal.format(90), gFeedModeModal.format(94));
 	writeBlock(gPlaneModal.format(17));
-    writeBlock(gUnitModal.format(21));
+	switch (unit)
+		{
+		case IN:
+			writeBlock(gUnitModal.format(20));
+			break;
+		case MM:
+			writeBlock(gUnitModal.format(21));
+			break;
+		}
+	
 	writeln("");
 	}
 
