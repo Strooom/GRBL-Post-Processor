@@ -3,10 +3,16 @@
 Custom Post-Processor for GRBL based Openbuilds-style CNC machines
 Using Exiting Post Processors as inspiration
 For documentation, see GitHub Wiki : https://github.com/Strooom/GRBL-Post-Processor/wiki
+This post-Processor should work on GRBL-based machines such as 
+* Openbuilds - OX, C-Beam
+* Inventables - X-Carve
+* ShapeOko / Carbide3D
+* your spindle is Makita RT0700 or Dewalt 611
 
 22/AUG/2016 - V1 : Kick Off
 23/AUG/2016 - V2 : Added Machining Time to Operations overview at file header
 24/AUG/2016 - V3 : Added extra user properties - further cleanup of unused variables
+07/SEP/2016 - V4 : Added support for INCHES. Added a safe retract at beginning of first section
 
 */
 
@@ -263,19 +269,36 @@ function forceAny()
 
 function onSection()
 	{
+	var nmbrOfSections = getNumberOfSections();		// how many operations are there in total
+	var sectionId = getCurrentSectionId();			// what is the number of this operation (starts from 0)
+	var section = getSection(sectionId);			// what is the section-object for this operation
+
 	// Insert a small comment section to identify the related G-Code in a large multi-operations file
-	var nmbrOfSections = getNumberOfSections();
-	var curSection = getCurrentSectionId();	
-	var comment = "Operation " + (curSection + 1) + " of " + nmbrOfSections;
+	var comment = "Operation " + (sectionId + 1) + " of " + nmbrOfSections;
 	if (hasParameter("operation-comment"))
 		{
 		comment = comment + " : " + getParameter("operation-comment");
 		}
 	writeComment(comment);
-
-	var section = getSection(curSection);
-	var tool = section.getTool();
 	writeln("");
+
+	// To be safe (after jogging to whatever position), move the spindle up to a safe home position before going to the inital position
+	// At end of a section, spindle is retrated to clearance hight, so it is only needed on the first section
+	// it is done with G53 - machine coordinates, so I put it in front of anything else
+	if(isFirstSection())
+		{
+		writeBlock(gAbsIncModal.format(90), gFormat.format(53), gMotionModal.format(0), "Z" + xyzFormat.format(-3));	// Retract spindle to Machine Z-3
+		}
+
+	// Write the WCS, ie. G54 or higher.. default to WCS1 / G54 if no or invalid WCS in order to prevent using Machine Coordinates G53
+	if ((section.workOffset < 1) || (section.workOffset > 6))
+		{
+		alert("Warning", "Invalid Work Coordinate System. Select WCS 1..6 in CAM software. Selecting default WCS1/G54");
+		section.workOffset = 1;	// If no WCS is set (or out of range), then default to WCS1 / G54
+		}
+	writeBlock(gFormat.format(53 + section.workOffset));
+	
+	var tool = section.getTool();
 		
 	// Insert the Spindle start command
 	if (tool.clockwise)
@@ -289,7 +312,7 @@ function onSection()
 	else
 		{
 		alert("Error", "Counter-clockwise Spindle Operation found, but your spindle does not support this");
-		error("Fatal Error in Operation " + (curSection + 1) + ": Counter-clockwise Spindle Operation found, but your spindle does not support this");
+		error("Fatal Error in Operation " + (sectionId + 1) + ": Counter-clockwise Spindle Operation found, but your spindle does not support this");
 		return;
 		}
 		
@@ -312,30 +335,22 @@ function onSection()
 			}
 		}
 	
-	// Write the WCS, ie. G54 or higher..
-	if ((currentSection.workOffset < 1) || (currentSection.workOffset > 6))
-		{
-		alert("Warning", "Invalid Work Coordinate System. Select WCS 1..6 in CAM software. Selecting default WCS1/G54");
-		currentSection.workOffset = 1;	// If no WCS is set (or out of range), then default to WCS1 / G54
-		}
-	writeBlock(gFormat.format(53 + currentSection.workOffset));
-
 	forceXYZ();
 
     var remaining = currentSection.workPlane;
     if (!isSameDirection(remaining.forward, new Vector(0, 0, 1)))
 		{
 		alert("Error", "Tool-Rotation detected - GRBL ony supports 3 Axis");
-		error("Fatal Error in Operation " + (curSection + 1) + ": Tool-Rotation detected but GRBL ony supports 3 Axis");
+		error("Fatal Error in Operation " + (sectionId + 1) + ": Tool-Rotation detected but GRBL ony supports 3 Axis");
 		}
     setRotation(remaining);
 
 	forceAny();
 
-	// Rapid move to initial position, first Z, then XY
+	// Rapid move to initial position, first XY, then Z
 	var initialPosition = getFramePosition(currentSection.getInitialPosition());
-	writeBlock(gMotionModal.format(0), zOutput.format(initialPosition.z));
     writeBlock(gAbsIncModal.format(90), gMotionModal.format(0), xOutput.format(initialPosition.x), yOutput.format(initialPosition.y));
+	writeBlock(gMotionModal.format(0), zOutput.format(initialPosition.z));
 	}
 
 function onDwell(seconds)
@@ -351,11 +366,11 @@ function onSpindleSpeed(spindleSpeed)
 function onRadiusCompensation()
 	{
 	var radComp = getRadiusCompensation();
-	var curSection = getCurrentSectionId();	
+	var sectionId = getCurrentSectionId();	
 	if (radComp != RADIUS_COMPENSATION_OFF)
 		{
 		alert("Error", "RadiusCompensation is not supported in GRBL - Change RadiusCompensation in CAD/CAM software to Off/Center/Computer");
-		error("Fatal Error in Operation " + (curSection + 1) + ": RadiusCompensation is found in CAD file but is not supported in GRBL");
+		error("Fatal Error in Operation " + (sectionId + 1) + ": RadiusCompensation is found in CAD file but is not supported in GRBL");
 		return;
 		}
 	}
