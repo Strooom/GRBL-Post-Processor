@@ -13,7 +13,7 @@ This post-Processor should work on GRBL-based machines such as
 23/AUG/2016 - V2 : Added Machining Time to Operations overview at file header
 24/AUG/2016 - V3 : Added extra user properties - further cleanup of unused variables
 07/SEP/2016 - V4 : Added support for INCHES. Added a safe retract at beginning of first section
-
+11/OCT/2016 - V5
 */
 
 description = "Openbuilds Grbl";
@@ -48,7 +48,7 @@ properties =
 	spindleTwoDirections : false,		// true : spindle can rotate clockwise and counterclockwise, will send M3 and M4. false : spindle can only go clockwise, will only send M3
 	hasCoolant : false,					// true : machine uses the coolant output, M8 M9 will be sent. false : coolant output not connected, so no M8 M9 will be sent
 	hasSpeedDial : true,				// true : the spindle is of type Makite RT0700, Dewalt 611 with a Dial to set speeds 1-6. false : other spindle
-	machineHomeZ : -3,					// absolute machine coordinates where the machine will move to at the end of the job - first retracting Z, then moving home X Y
+	machineHomeZ : -10,					// absolute machine coordinates where the machine will move to at the end of the job - first retracting Z, then moving home X Y
 	machineHomeX : -10,
 	machineHomeY : -10
 	};
