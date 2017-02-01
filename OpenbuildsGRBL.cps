@@ -14,6 +14,7 @@ This post-Processor should work on GRBL-based machines such as
 24/AUG/2016 - V3 : Added extra user properties - further cleanup of unused variables
 07/SEP/2016 - V4 : Added support for INCHES. Added a safe retract at beginning of first section
 11/OCT/2016 - V5
+30/JAN/2017 - V6 : Modified capabilities to also allow waterjet, laser-cutting..
 */
 
 description = "Openbuilds Grbl";
@@ -24,11 +25,11 @@ description = "Open Hardware Desktop CNC Router";
 legal = "Copyright (C) 2012-2016 by Autodesk, Inc.";
 certificationLevel = 2;
 
-extension = "nc";						// file extension of the gcode file
-setCodePage("ascii");					// character set of the gcode file
-//setEOL(CRLF);							// end-of-line type : use CRLF for windows
+extension = "nc";										// file extension of the gcode file
+setCodePage("ascii");									// character set of the gcode file
+//setEOL(CRLF);											// end-of-line type : use CRLF for windows
 
-capabilities = CAPABILITY_MILLING;		// intended for a CNC, so Milling
+capabilities = CAPABILITY_MILLING | CAPABILITY_JET;		// intended for a CNC, so Milling
 tolerance = spatial(0.005, MM);
 minimumChordLength = spatial(0.01, MM);
 minimumCircularRadius = spatial(0.01, MM);
@@ -38,8 +39,8 @@ maximumCircularSweep = toRad(180);
 allowHelicalMoves = true;
 allowedCircularPlanes = undefined;
 
-var GRBLunits = MM;						// GRBL controller set to mm (Metric). Allows for a consistency check between GRBL settings and CAM file output
-										// var GRBLunits = IN;
+var GRBLunits = MM;										// GRBL controller set to mm (Metric). Allows for a consistency check between GRBL settings and CAM file output
+														// var GRBLunits = IN;
 
 // user-defined properties : defaults are set, but they can be changed from a dialog box in Fusion when doing a post.
 properties =
@@ -48,6 +49,8 @@ properties =
 	spindleTwoDirections : false,		// true : spindle can rotate clockwise and counterclockwise, will send M3 and M4. false : spindle can only go clockwise, will only send M3
 	hasCoolant : false,					// true : machine uses the coolant output, M8 M9 will be sent. false : coolant output not connected, so no M8 M9 will be sent
 	hasSpeedDial : true,				// true : the spindle is of type Makite RT0700, Dewalt 611 with a Dial to set speeds 1-6. false : other spindle
+	autoDecrementZ : false,				// true : at the end of the file, lower Z-axis WCS-origin by a certain amount
+	autoDecrementZamount : 0.1,			// amount to lower Z-axis WCS origin at end of file
 	machineHomeZ : -10,					// absolute machine coordinates where the machine will move to at the end of the job - first retracting Z, then moving home X Y
 	machineHomeX : -10,
 	machineHomeY : -10
@@ -170,7 +173,7 @@ function onOpen()
 	myMachine.setModel("OX CNC 1000 x 750");
 	myMachine.setControl("GRBL V0.9j");
 
-	writeln("%");
+	writeln("%");																								// Punch-Tape Begin, commented out as not supported by GRBL
 
 	var productName = getProduct();
 	writeComment("Made in : " + productName);
@@ -287,7 +290,11 @@ function onSection()
 	// it is done with G53 - machine coordinates, so I put it in front of anything else
 	if(isFirstSection())
 		{
-		writeBlock(gAbsIncModal.format(90), gFormat.format(53), gMotionModal.format(0), "Z" + xyzFormat.format(properties.machineHomeZ));	// Retract spindle to Machine Z Home
+		writeBlock(gAbsIncModal.format(90));	// Set to absolute coordinates
+		if (isMilling())
+			{
+			writeBlock(gFormat.format(53), gMotionModal.format(0), "Z" + xyzFormat.format(properties.machineHomeZ));	// Retract spindle to Machine Z Home
+			}
 		}
 
 	// Write the WCS, ie. G54 or higher.. default to WCS1 / G54 if no or invalid WCS in order to prevent using Machine Coordinates G53
@@ -478,7 +485,11 @@ function onSectionEnd()
 
 function onClose()
 	{
-	writeBlock(gAbsIncModal.format(90), gFormat.format(53), gMotionModal.format(0), "Z" + xyzFormat.format(properties.machineHomeZ));	// Retract spindle to Machine Z Home
+	writeBlock(gAbsIncModal.format(90));	// Set to absolute coordinates for the following moves
+	if (isMilling())
+		{
+		writeBlock(gAbsIncModal.format(90), gFormat.format(53), gMotionModal.format(0), "Z" + xyzFormat.format(properties.machineHomeZ));	// Retract spindle to Machine Z Home
+		}
 	writeBlock(mFormat.format(5));																					// Stop Spindle
 	if (properties.hasCoolant)
 		{
@@ -486,6 +497,17 @@ function onClose()
 		}
 	onDwell(properties.spindleOnOffDelay);																			// Wait for spindle to stop
 	writeBlock(gAbsIncModal.format(90), gFormat.format(53), gMotionModal.format(0), "X" + xyzFormat.format(properties.machineHomeX), "Y" + xyzFormat.format(properties.machineHomeY));	// Return to home position
+
+	if (properties.autoDecrementZ)
+		{
+		writeBlock(mFormat.format(9));																				// Stop Coolant
+		}
+
+
 	writeBlock(mFormat.format(30));																					// Program End
-	writeln("%");																									// Punch-Tape End
+	writeln("%");																									// Punch-Tape End, commented out as not supported by GRBL
 	}
+
+	
+	
+	
