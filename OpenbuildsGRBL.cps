@@ -17,6 +17,7 @@ This post-Processor should work on GRBL-based machines such as
 30/JAN/2017 - V6 : Modified capabilities to also allow waterjet, laser-cutting..
 */
 
+
 description = "Openbuilds Grbl";
 vendor = "Openbuilds";
 vendorUrl = "http://openbuilds.com";
@@ -49,6 +50,7 @@ properties =
 	spindleTwoDirections : false,		// true : spindle can rotate clockwise and counterclockwise, will send M3 and M4. false : spindle can only go clockwise, will only send M3
 	hasCoolant : false,					// true : machine uses the coolant output, M8 M9 will be sent. false : coolant output not connected, so no M8 M9 will be sent
 	hasSpeedDial : true,				// true : the spindle is of type Makite RT0700, Dewalt 611 with a Dial to set speeds 1-6. false : other spindle
+	wantHoming: false,
 	machineHomeZ : -10,					// absolute machine coordinates where the machine will move to at the end of the job - first retracting Z, then moving home X Y
 	machineHomeX : -10,
 	machineHomeY : -10
@@ -60,6 +62,7 @@ var mFormat = createFormat({prefix:"M", decimals:0});
 
 var xyzFormat = createFormat({decimals:(unit == MM ? 3 : 4)});
 var arcFormat = createFormat({decimals:(unit == MM ? 4 : 5)});    // uses extra digit in arcs
+var abcFormat = createFormat({decimals:3, forceDecimal:true, scale:DEG});
 var feedFormat = createFormat({decimals:0});
 var rpmFormat = createFormat({decimals:0});
 var secFormat = createFormat({decimals:1, forceDecimal:true});
@@ -68,6 +71,9 @@ var taperFormat = createFormat({decimals:1, scale:DEG});
 var xOutput = createVariable({prefix:"X"}, xyzFormat);
 var yOutput = createVariable({prefix:"Y"}, xyzFormat);
 var zOutput = createVariable({prefix:"Z"}, xyzFormat);
+var aOutput = createVariable({prefix:"A"}, abcFormat);
+var bOutput = createVariable({prefix:"B"}, abcFormat);
+var cOutput = createVariable({prefix:"C"}, abcFormat);
 var feedOutput = createVariable({prefix:"F"}, feedFormat);
 var sOutput = createVariable({prefix:"S", force:true}, rpmFormat);
 
@@ -145,6 +151,12 @@ function writeComment(text)
 
 function onOpen()
 	{
+    var aAxis = createAxis({coordinate:0, table:true, axis:[(properties.makeAAxisOtherWay ? -1 : 1) * -1, 0, 0], cyclic:true, preference:1});
+    machineConfiguration = new MachineConfiguration(aAxis);
+
+    setMachineConfiguration(machineConfiguration);
+    optimizeMachineAngles2(1); // map tip mode
+
 	// Number of checks capturing fatal errors
 	// 1. is CAD file in same units as our GRBL configuration ?
    // swarfer : GRBL obeys G20/21 so we should only need to output the correct code for the numbers we are outputting, I will look at this later
@@ -164,6 +176,9 @@ function onOpen()
 
 	// 2. is RadiusCompensation not set incorrectly ?
 	onRadiusCompensation();
+
+	bOutput.disable();
+	cOutput.disable();
 
 	// 3. here you set all the properties of your machine, so they can be used later on
 	var myMachine = getMachineConfiguration();
@@ -303,7 +318,7 @@ function onSection()
 		writeBlock(gAbsIncModal.format(90));	// Set to absolute coordinates
 		if (isMilling())
 			{
-			writeBlock(gFormat.format(53), gMotionModal.format(0), "Z" + xyzFormat.format(properties.machineHomeZ));	// Retract spindle to Machine Z Home
+			if(properties.wantHoming) writeBlock(gFormat.format(53), gMotionModal.format(0), "Z" + xyzFormat.format(properties.machineHomeZ));	// Retract spindle to Machine Z Home
 			}
 		}
 
@@ -434,14 +449,44 @@ function onLinear(_x, _y, _z, feed)
 
 function onRapid5D(_x, _y, _z, _a, _b, _c)
 	{
-	alert("Error", "Tool-Rotation detected - GRBL only supports 3 Axis");
-	error("Tool-Rotation detected but GRBL only supports 3 Axis");
+	var x = xOutput.format(_x);
+	var y = yOutput.format(_y);
+	var z = zOutput.format(_z);
+	var a = aOutput.format(_a);
+	var b = bOutput.format(_b);
+	var c = cOutput.format(_c);
+	if (x || y || z || a || b || c)
+		{
+		writeBlock(gMotionModal.format(0), x, y, z, a, b, c);
+		feedOutput.reset();
+		}
 	}
 
 function onLinear5D(_x, _y, _z, _a, _b, _c, feed)
 	{
-	alert("Error", "Tool-Rotation detected - GRBL only supports 3 Axis");
-	error("Tool-Rotation detected but GRBL only supports 3 Axis");
+	var x = xOutput.format(_x);
+	var y = yOutput.format(_y);
+	var z = zOutput.format(_z);
+	var a = aOutput.format(_a);
+	var b = bOutput.format(_b);
+	var c = cOutput.format(_c);
+	var f = feedOutput.format(feed);
+
+	if (x || y || z || a || b || c)
+		{
+		writeBlock(gMotionModal.format(1), x, y, z, a, b, c, f);
+		}
+	else if (f)
+		{
+		if (getNextRecord().isMotion())
+			{
+			feedOutput.reset(); // force feed on next line
+			}
+		else
+			{
+			writeBlock(gMotionModal.format(1), f);
+			}
+		}
 	}
 
 function onCircular(clockwise, cx, cy, cz, x, y, z, feed)
@@ -502,7 +547,7 @@ function onClose()
 	writeBlock(gAbsIncModal.format(90));	// Set to absolute coordinates for the following moves
 	if (isMilling())
 		{
-		writeBlock(gAbsIncModal.format(90), gFormat.format(53), gMotionModal.format(0), "Z" + xyzFormat.format(properties.machineHomeZ));	// Retract spindle to Machine Z Home
+		if(properties.wantHoming) writeBlock(gAbsIncModal.format(90), gFormat.format(53), gMotionModal.format(0), "Z" + xyzFormat.format(properties.machineHomeZ));	// Retract spindle to Machine Z Home
 		}
 	writeBlock(mFormat.format(5));																					// Stop Spindle
 	if (properties.hasCoolant)
@@ -510,7 +555,7 @@ function onClose()
 		writeBlock(mFormat.format(9));																				// Stop Coolant
 		}
 	onDwell(properties.spindleOnOffDelay);																			// Wait for spindle to stop
-	writeBlock(gAbsIncModal.format(90), gFormat.format(53), gMotionModal.format(0), "X" + xyzFormat.format(properties.machineHomeX), "Y" + xyzFormat.format(properties.machineHomeY));	// Return to home position
+	if(properties.wantHoming) writeBlock(gAbsIncModal.format(90), gFormat.format(53), gMotionModal.format(0), "X" + xyzFormat.format(properties.machineHomeX), "Y" + xyzFormat.format(properties.machineHomeY));	// Return to home position
 
 	writeBlock(mFormat.format(30));																					// Program End
 	writeln("%");																									// EndOfFile marker
