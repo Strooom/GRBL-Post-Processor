@@ -59,6 +59,7 @@ var gFormat = createFormat({prefix:"G", decimals:0});
 var mFormat = createFormat({prefix:"M", decimals:0});
 
 var xyzFormat = createFormat({decimals:(unit == MM ? 3 : 4)});
+var arcFormat = createFormat({decimals:(unit == MM ? 4 : 5)});    // uses extra digit in arcs
 var feedFormat = createFormat({decimals:0});
 var rpmFormat = createFormat({decimals:0});
 var secFormat = createFormat({decimals:1, forceDecimal:true});
@@ -70,9 +71,14 @@ var zOutput = createVariable({prefix:"Z"}, xyzFormat);
 var feedOutput = createVariable({prefix:"F"}, feedFormat);
 var sOutput = createVariable({prefix:"S", force:true}, rpmFormat);
 
-var iOutput = createReferenceVariable({prefix:"I"}, xyzFormat);
-var jOutput = createReferenceVariable({prefix:"J"}, xyzFormat);
-var kOutput = createReferenceVariable({prefix:"K"}, xyzFormat);
+// for arcs, use extra digit
+var xaOutput = createVariable({prefix:"X"}, arcFormat);
+var yaOutput = createVariable({prefix:"Y"}, arcFormat);
+var zaOutput = createVariable({prefix:"Z"}, arcFormat);
+
+var iOutput = createReferenceVariable({prefix:"I"}, arcFormat);
+var jOutput = createReferenceVariable({prefix:"J"}, arcFormat);
+var kOutput = createReferenceVariable({prefix:"K"}, arcFormat);
 
 var gMotionModal = createModal({}, gFormat); 											// modal group 1 // G0-G3, ...
 var gPlaneModal = createModal({onchange:function () {gMotionModal.reset();}}, gFormat); // modal group 2 // G17-19
@@ -141,6 +147,7 @@ function onOpen()
 	{
 	// Number of checks capturing fatal errors
 	// 1. is CAD file in same units as our GRBL configuration ?
+   // swarfer : GRBL obeys G20/21 so we should only need to output the correct code for the numbers we are outputting, I will look at this later
 	if (unit != GRBLunits)
 		{
 		if (GRBLunits == MM)
@@ -208,8 +215,10 @@ function onOpen()
 			{
 			writeComment(i+1);
 			}
-
-		writeComment("  Work Coordinate System : G" + (section.workOffset + 53));
+      if (section.workOffset > 0)
+         {
+		   writeComment("  Work Coordinate System : G" + (section.workOffset + 53));
+         }
 		writeComment("  Tool : " + toTitleCase(getToolTypeName(tool.type)) + " " + tool.numberOfFlutes + " Flutes, Diam = " + xyzFormat.format(tool.diameter) + "mm, Len = " + tool.fluteLength + "mm");
 		if (properties.hasSpeedDial)
 			{
@@ -286,8 +295,8 @@ function onSection()
 	writeComment(comment);
 	writeln("");
 
-	// To be safe (after jogging to whatever position), move the spindle up to a safe home position before going to the inital position
-	// At end of a section, spindle is retracted to clearance hight, so it is only needed on the first section
+	// To be safe (after jogging to whatever position), move the spindle up to a safe home position before going to the initial position
+	// At end of a section, spindle is retracted to clearance height, so it is only needed on the first section
 	// it is done with G53 - machine coordinates, so I put it in front of anything else
 	if(isFirstSection())
 		{
@@ -302,9 +311,13 @@ function onSection()
 	if ((section.workOffset < 1) || (section.workOffset > 6))
 		{
 		alert("Warning", "Invalid Work Coordinate System. Select WCS 1..6 in CAM software. Selecting default WCS1/G54");
-		section.workOffset = 1;	// If no WCS is set (or out of range), then default to WCS1 / G54
+		//section.workOffset = 1;	// If no WCS is set (or out of range), then default to WCS1 / G54 : swarfer: this appears to be readonly
+      writeBlock(gFormat.format(54));  // output what we want, G54
 		}
-	writeBlock(gFormat.format(53 + section.workOffset));
+   else
+      {
+	   writeBlock(gFormat.format(53 + section.workOffset));  // use the selected WCS
+      }
 
 	var tool = section.getTool();
 
@@ -348,8 +361,8 @@ function onSection()
 	var remaining = currentSection.workPlane;
 	if (!isSameDirection(remaining.forward, new Vector(0, 0, 1)))
 		{
-		alert("Error", "Tool-Rotation detected - GRBL ony supports 3 Axis");
-		error("Fatal Error in Operation " + (sectionId + 1) + ": Tool-Rotation detected but GRBL ony supports 3 Axis");
+		alert("Error", "Tool-Rotation detected - GRBL only supports 3 Axis");
+		error("Fatal Error in Operation " + (sectionId + 1) + ": Tool-Rotation detected but GRBL only supports 3 Axis");
 		}
 	setRotation(remaining);
 
@@ -421,14 +434,14 @@ function onLinear(_x, _y, _z, feed)
 
 function onRapid5D(_x, _y, _z, _a, _b, _c)
 	{
-	alert("Error", "Tool-Rotation detected - GRBL ony supports 3 Axis");
-	error("Tool-Rotation detected but GRBL ony supports 3 Axis");
+	alert("Error", "Tool-Rotation detected - GRBL only supports 3 Axis");
+	error("Tool-Rotation detected but GRBL only supports 3 Axis");
 	}
 
 function onLinear5D(_x, _y, _z, _a, _b, _c, feed)
 	{
-	alert("Error", "Tool-Rotation detected - GRBL ony supports 3 Axis");
-	error("Tool-Rotation detected but GRBL ony supports 3 Axis");
+	alert("Error", "Tool-Rotation detected - GRBL only supports 3 Axis");
+	error("Tool-Rotation detected but GRBL only supports 3 Axis");
 	}
 
 function onCircular(clockwise, cx, cy, cz, x, y, z, feed)
@@ -446,13 +459,13 @@ function onCircular(clockwise, cx, cy, cz, x, y, z, feed)
 		switch (getCircularPlane())
 			{
 			case PLANE_XY:
-				writeBlock(gPlaneModal.format(17), gMotionModal.format(clockwise ? 2 : 3), xOutput.format(x), iOutput.format(cx - start.x, 0), jOutput.format(cy - start.y, 0), feedOutput.format(feed));
+				writeBlock(gPlaneModal.format(17), gMotionModal.format(clockwise ? 2 : 3), xaOutput.format(x), iOutput.format(cx - start.x, 0), jOutput.format(cy - start.y, 0), feedOutput.format(feed));
 				break;
 			case PLANE_ZX:
-				writeBlock(gPlaneModal.format(18), gMotionModal.format(clockwise ? 2 : 3), zOutput.format(z), iOutput.format(cx - start.x, 0), kOutput.format(cz - start.z, 0), feedOutput.format(feed));
+				writeBlock(gPlaneModal.format(18), gMotionModal.format(clockwise ? 2 : 3), zaOutput.format(z), iOutput.format(cx - start.x, 0), kOutput.format(cz - start.z, 0), feedOutput.format(feed));
 				break;
 			case PLANE_YZ:
-				writeBlock(gPlaneModal.format(19), gMotionModal.format(clockwise ? 2 : 3), yOutput.format(y), jOutput.format(cy - start.y, 0), kOutput.format(cz - start.z, 0), feedOutput.format(feed));
+				writeBlock(gPlaneModal.format(19), gMotionModal.format(clockwise ? 2 : 3), yaOutput.format(y), jOutput.format(cy - start.y, 0), kOutput.format(cz - start.z, 0), feedOutput.format(feed));
 				break;
 			default:
 				linearize(tolerance);
@@ -463,13 +476,13 @@ function onCircular(clockwise, cx, cy, cz, x, y, z, feed)
 		switch (getCircularPlane())
 			{
 			case PLANE_XY:
-				writeBlock(gPlaneModal.format(17), gMotionModal.format(clockwise ? 2 : 3), xOutput.format(x), yOutput.format(y), zOutput.format(z), iOutput.format(cx - start.x, 0), jOutput.format(cy - start.y, 0), feedOutput.format(feed));
+				writeBlock(gPlaneModal.format(17), gMotionModal.format(clockwise ? 2 : 3), xaOutput.format(x), yaOutput.format(y), zaOutput.format(z), iOutput.format(cx - start.x, 0), jOutput.format(cy - start.y, 0), feedOutput.format(feed));
 				break;
 			case PLANE_ZX:
-				writeBlock(gPlaneModal.format(18), gMotionModal.format(clockwise ? 2 : 3), xOutput.format(x), yOutput.format(y), zOutput.format(z), iOutput.format(cx - start.x, 0), kOutput.format(cz - start.z, 0), feedOutput.format(feed));
+				writeBlock(gPlaneModal.format(18), gMotionModal.format(clockwise ? 2 : 3), xaOutput.format(x), yaOutput.format(y), zaOutput.format(z), iOutput.format(cx - start.x, 0), kOutput.format(cz - start.z, 0), feedOutput.format(feed));
 				break;
 			case PLANE_YZ:
-				writeBlock(gPlaneModal.format(19), gMotionModal.format(clockwise ? 2 : 3), xOutput.format(x), yOutput.format(y), zOutput.format(z), jOutput.format(cy - start.y, 0), kOutput.format(cz - start.z, 0), feedOutput.format(feed));
+				writeBlock(gPlaneModal.format(19), gMotionModal.format(clockwise ? 2 : 3), xaOutput.format(x), yaOutput.format(y), zaOutput.format(z), jOutput.format(cy - start.y, 0), kOutput.format(cz - start.z, 0), feedOutput.format(feed));
 				break;
 			default:
 				linearize(tolerance);
