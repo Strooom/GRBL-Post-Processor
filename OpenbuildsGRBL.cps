@@ -50,10 +50,12 @@ properties =
 	spindleTwoDirections : false,		// true : spindle can rotate clockwise and counterclockwise, will send M3 and M4. false : spindle can only go clockwise, will only send M3
 	hasCoolant : false,					// true : machine uses the coolant output, M8 M9 will be sent. false : coolant output not connected, so no M8 M9 will be sent
 	hasSpeedDial : true,				// true : the spindle is of type Makite RT0700, Dewalt 611 with a Dial to set speeds 1-6. false : other spindle
-	wantHoming: false,
+	wantHoming: false,					// do not home by default, can be dangerous
 	machineHomeZ : -10,					// absolute machine coordinates where the machine will move to at the end of the job - first retracting Z, then moving home X Y
 	machineHomeX : -10,
-	machineHomeY : -10
+	machineHomeY : -10,
+	fourAxis: false,					// enable four axis mode
+	makeAAxisOtherWay: false			// change direction of rotation of A axis
 	};
 
 // creation of all kinds of G-code formats - controls the amount of decimals used in the generated G-Code
@@ -62,7 +64,7 @@ var mFormat = createFormat({prefix:"M", decimals:0});
 
 var xyzFormat = createFormat({decimals:(unit == MM ? 3 : 4)});
 var arcFormat = createFormat({decimals:(unit == MM ? 4 : 5)});    // uses extra digit in arcs
-var abcFormat = createFormat({decimals:3, forceDecimal:true, scale:DEG});
+var abcFormat = createFormat({decimals:3, forceDecimal:true, scale:DEG});	// A axis is rotating, so set unit as degrees
 var feedFormat = createFormat({decimals:0});
 var rpmFormat = createFormat({decimals:0});
 var secFormat = createFormat({decimals:1, forceDecimal:true});
@@ -150,12 +152,16 @@ function writeComment(text)
 	}
 
 function onOpen()
-	{
-    var aAxis = createAxis({coordinate:0, table:true, axis:[(properties.makeAAxisOtherWay ? -1 : 1) * -1, 0, 0], cyclic:true, preference:1});
-    machineConfiguration = new MachineConfiguration(aAxis);
+{
+	if (properties.fourAxis) {
+        // Create the fourth axis
+        // See page 23 of https://github.com/AutodeskCAM/Documentation/blob/master/Autodesk%20Post%20Processor%20manual-sm-130829.pdf
+		var aAxis = createAxis({coordinate:0, table:true, axis:[(properties.makeAAxisOtherWay ? -1 : 1) * -1, 0, 0], cyclic:true, preference:1});
+		machineConfiguration = new MachineConfiguration(aAxis);
 
-    setMachineConfiguration(machineConfiguration);
-    optimizeMachineAngles2(1); // map tip mode
+		setMachineConfiguration(machineConfiguration);
+		optimizeMachineAngles2(1); // map tip mode
+	}
 
 	// Number of checks capturing fatal errors
 	// 1. is CAD file in same units as our GRBL configuration ?
@@ -177,7 +183,7 @@ function onOpen()
 	// 2. is RadiusCompensation not set incorrectly ?
 	onRadiusCompensation();
 
-	bOutput.disable();
+	bOutput.disable(); // five and six axis not yet supported
 	cOutput.disable();
 
 	// 3. here you set all the properties of your machine, so they can be used later on
@@ -374,15 +380,22 @@ function onSection()
 	forceXYZ();
 
 	var remaining = currentSection.workPlane;
-	if (!isSameDirection(remaining.forward, new Vector(0, 0, 1)))
+	if (!properties.fourAxis && !isSameDirection(remaining.forward, new Vector(0, 0, 1)))
 		{
-		alert("Error", "Tool-Rotation detected - GRBL only supports 3 Axis");
-		error("Fatal Error in Operation " + (sectionId + 1) + ": Tool-Rotation detected but GRBL only supports 3 Axis");
+		alert("Error", "Tool-Rotation detected - GRBL ony supports 3 Axis or fourAxis is false");
+		error("Fatal Error in Operation " + (sectionId + 1) + ": Tool-Rotation detected but GRBL ony supports 3 Axis or fourAxis is false");
 		}
 	setRotation(remaining);
 
 	forceAny();
 
+	// Move A axis first if needed
+	if (properties.fourAxis) {
+        // See page 24 of https://github.com/AutodeskCAM/Documentation/blob/master/Autodesk%20Post%20Processor%20manual-sm-130829.pdf
+		var abc	= machineConfiguration.getABC(currentSection.workPlane);
+		setRotation(machineConfiguration.getRemainingOrientation(abc, currentSection.workPlane));
+		writeBlock(gMotionModal.format(0), aOutput.format(abc.x));
+	}
 	// Rapid move to initial position, first XY, then Z
 	var initialPosition = getFramePosition(currentSection.getInitialPosition());
 	writeBlock(gAbsIncModal.format(90), gMotionModal.format(0), xOutput.format(initialPosition.x), yOutput.format(initialPosition.y));
