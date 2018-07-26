@@ -60,7 +60,7 @@ var mFormat = createFormat({prefix:"M", decimals:0});
 var xyzFormat = createFormat({decimals:(unit == MM ? 4 : 6)});
 var feedFormat = createFormat({decimals:(unit == MM ? 1 : 3)});
 var rpmFormat = createFormat({decimals:0});
-var secFormat = createFormat({decimals:3, forceDecimal:true});
+var secFormat = createFormat({decimals:1, forceDecimal:true, trim:false});
 var taperFormat = createFormat({decimals:1, scale:DEG});
 
 var xOutput = createVariable({prefix:"X"}, xyzFormat);
