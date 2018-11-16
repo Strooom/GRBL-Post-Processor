@@ -16,7 +16,7 @@ This post-Processor should work on GRBL-based machines such as
 11/OCT/2016 - V5
 30/JAN/2017 - V6 : Modified capabilities to also allow waterjet, laser-cutting..
 25/JUL/2018 - V7 : Code review to eliminate a bug causing GRBL Error 33. Compared this postProcessor with the latest grbl.cps
-
+16/NOV/2018 - V8 : Added extra coolant modes : Flood = M8, Mist = M7, Flood+Mist
 */
 
 description = "Openbuilds Grbl";
@@ -331,8 +331,17 @@ function onSection()
 	// If the machine has coolant, write M8, else write M9
 	if (properties.hasCoolant)
 		{
-		if (tool.coolant)
+		if (tool.coolant == COOLANT_FLOOD)
 			{
+			writeBlock(mFormat.format(8));
+			}
+		else if (tool.coolant == COOLANT_MIST)
+			{
+			writeBlock(mFormat.format(7));
+			}
+		else if (tool.coolant == COOLANT_FLOOD_MIST)
+			{
+			writeBlock(mFormat.format(7));
 			writeBlock(mFormat.format(8));
 			}
 		else
