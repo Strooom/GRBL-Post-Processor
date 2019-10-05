@@ -53,6 +53,17 @@ properties =
 	machineHomeY : -10
 	};
 
+propertyDefinitions =
+	{
+	spindleOnOffDelay: {title: "Spindle On/Off Delay (s)", description: "Time the spindle needs to get up to speed or stop.", type: "number"},
+	spindleTwoDirections: {title: "Bidirectional Spindle", description: "True if the spindle can rotate clockwise and counterclockwise, will send M3 and M4. False if the spindle can only go clockwise, will only send M3.", type: "boolean"},
+	hasCoolant: {title: "Has Coolant", description: "True if the machine uses the coolant output (M8 M9 will be sent). False if the coolant output not connected.", type: "boolean"},
+	hasSpeedDial: {title: "Has Speed Dial", description: "True if the spindle is of type Makita RT0700, Dewalt 611 with a Dial to set speeds 1-6.", type: "boolean"},
+	machineHomeZ: {title: "Z Home Position", description: "Absolute machine coordinates where the machine will move to at the end of the job - first retracting Z, then moving home X Y", type: "number"},
+	machineHomeX: {title: "X Home Position", description: "Absolute machine coordinates where the machine will move to at the end of the job - first retracting Z, then moving home X Y", type: "number"},
+	machineHomeY: {title: "Y Home Position", description: "Absolute machine coordinates where the machine will move to at the end of the job - first retracting Z, then moving home X Y", type: "number"},
+	};
+
 // creation of all kinds of G-code formats - controls the amount of decimals used in the generated G-Code
 var gFormat = createFormat({prefix:"G", decimals:0});
 var mFormat = createFormat({prefix:"M", decimals:0});
