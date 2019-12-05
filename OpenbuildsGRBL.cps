@@ -17,6 +17,7 @@ This post-Processor should work on GRBL-based machines such as
 30/JAN/2017 - V6 : Modified capabilities to also allow waterjet, laser-cutting..
 25/JUL/2018 - V7 : Code review to eliminate a bug causing GRBL Error 33. Compared this postProcessor with the latest grbl.cps
 16/NOV/2018 - V8 : Added extra coolant modes : Flood = M8, Mist = M7, Flood+Mist
+05/DEC/2019 - V9 : Modified capabilities to also allow turning.
 */
 
 description = "Openbuilds Grbl";
@@ -31,7 +32,7 @@ extension = "nc";										// file extension of the gcode file
 setCodePage("ascii");									// character set of the gcode file
 //setEOL(CRLF);											// end-of-line type : default for Windows OS is CRLF (so that's why this line is commented out), change to CR, LF, CRLF or LFCR if you are on another OS...
 
-capabilities = CAPABILITY_MILLING | CAPABILITY_JET;		// intended for a CNC, so Milling, or 2D machines, such as lasers..
+capabilities = CAPABILITY_MILLING | CAPABILITY_JET | CAPABILITY_TURNING;		// intended for a CNC, so Milling, or 2D machines, such as lasers.. I also added turning, as apparently it works fine for a lathe running GRBL
 tolerance = spatial(0.002, MM);							// when linearizing a move, fusion will create linear segments which are within this amount of the actual path... Smaller values will result in more and smaller linear segments. GRBL.cps uses 0.002 mm
 minimumChordLength = spatial(0.25, MM);					// minimum lenght of an arc, if Fusion needs a short arc, it will linearize... Problem with very small arcs is that rounding errors resulting from limited number of digits, result in GRBL error 33
 minimumCircularRadius = spatial(0.5, MM);				// minimum radius of an arc.. Fusion will linearize if you need a smaller arc. Same problem with rounding errors as above
