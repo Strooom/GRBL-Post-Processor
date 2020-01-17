@@ -50,6 +50,7 @@ properties =
 	hasCoolant : false,					// true : machine uses the coolant output, M8 M9 will be sent. false : coolant output not connected, so no M8 M9 will be sent
 	hasSpeedDial : true,				// true : the spindle is of type Makita RT0700, Dewalt 611 with a Dial to set speeds 1-6. false : other spindle
 	shouldHomeZ : true,					// true : the machine should go to a specific z coordinate at start and end of gcode
+	shouldHomeXY : true,					// true : the machine should go to a specific xy coordinate at end of gcode
 	machineHomeZ : -10,					// absolute machine coordinates where the machine will move to at the end of the job - first retracting Z, then moving home X Y
 	machineHomeX : -10,
 	machineHomeY : -10
@@ -62,6 +63,7 @@ propertyDefinitions =
 	hasCoolant: {title: "Has Coolant", description: "True if the machine uses the coolant output (M8 M9 will be sent). False if the coolant output not connected.", type: "boolean"},
 	hasSpeedDial: {title: "Has Speed Dial", description: "True if the spindle is of type Makita RT0700, Dewalt 611 with a Dial to set speeds 1-6.", type: "boolean"},
 	shouldHomeZ: {title: "Use Z Home Position", description: "True if the machine should go to a specific z coordinate at start and end of gcode.", type: "boolean"},
+	shouldHomeXY: {title: "Use XY Home Position", description: "True if the machine should go to a specific xy coordinate at end of gcode.", type: "boolean"},
 	machineHomeZ: {title: "Z Home Position", description: "Absolute machine coordinates where the machine will move to at the end of the job - first retracting Z, then moving home X Y", type: "number"},
 	machineHomeX: {title: "X Home Position", description: "Absolute machine coordinates where the machine will move to at the end of the job - first retracting Z, then moving home X Y", type: "number"},
 	machineHomeY: {title: "Y Home Position", description: "Absolute machine coordinates where the machine will move to at the end of the job - first retracting Z, then moving home X Y", type: "number"},
@@ -470,8 +472,10 @@ function onClose()
 		writeBlock(mFormat.format(9));																				// Stop Coolant
 		}
 	onDwell(properties.spindleOnOffDelay);																			// Wait for spindle to stop
-	writeBlock(gAbsIncModal.format(90), gFormat.format(53), gMotionModal.format(0), "X" + xyzFormat.format(properties.machineHomeX), "Y" + xyzFormat.format(properties.machineHomeY));	// Return to home position
-
+	if (properties.shouldHomeXY)
+		{
+		writeBlock(gAbsIncModal.format(90), gFormat.format(53), gMotionModal.format(0), "X" + xyzFormat.format(properties.machineHomeX), "Y" + xyzFormat.format(properties.machineHomeY));	// Return to home position
+		}
 	writeBlock(mFormat.format(30));																					// Program End
 	writeln("%");																									// EndOfFile marker - GRBL doesn't use it / ignores it, but it's so much tradition, so I left it in..
 	}
